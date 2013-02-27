@@ -17,7 +17,15 @@ namespace GitUI
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
                 DisposeRevisionGraphCommand();
+            }
+
+            if (_BuildServerWatcher != null)
+            {
+                _BuildServerWatcher.Dispose();
+                _BuildServerWatcher = null;
+            }
 
             if (_IndexWatcher != null)
             {

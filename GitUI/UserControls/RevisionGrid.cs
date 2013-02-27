@@ -11,6 +11,7 @@ using System.Threading;
 using System.Windows.Forms;
 using GitCommands;
 using GitCommands.Git;
+using GitUI.BuildServerIntegration;
 using GitUI.CommandsDialogs;
 using GitUI.HelperDialogs;
 using GitUI.Hotkey;
@@ -63,6 +64,8 @@ namespace GitUI
         private Label _quickSearchLabel;
         private string _quickSearchString;
         private RevisionGraph _revisionGraphCommand;
+
+        private BuildServerWatcher _BuildServerWatcher;
 
         private RevisionGridLayout layout;
         private int rowHeigth;
@@ -479,6 +482,8 @@ namespace GitUI
             Revisions.Visible = false;
             Loading.Visible = true;
             Loading.BringToFront();
+
+            _BuildServerWatcher = new BuildServerWatcher(this, Revisions);
         }
 
         public new void Load()
@@ -744,6 +749,8 @@ namespace GitUI
 
                 LastScrollPos = Revisions.FirstDisplayedScrollingRowIndex;
 
+                _BuildServerWatcher.CancelBuildStatusFetchOperation();
+
                 DisposeRevisionGraphCommand();
 
                 var newCurrentCheckout = Module.GetCurrentCheckout();
@@ -926,6 +933,8 @@ namespace GitUI
                                           Loading.Visible = false;
                                           SelectInitialRevision();
                                           _isLoading = false;
+
+                                          _BuildServerWatcher.LaunchBuildServerInfoFetchOperation();
                                       }, this);
             }
 
@@ -949,7 +958,7 @@ namespace GitUI
             }
         }
 
-        private int SearchRevision(string initRevision, out string graphRevision)
+        internal int SearchRevision(string initRevision, out string graphRevision)
         {
             var rows = Revisions
                 .Rows
@@ -1167,52 +1176,52 @@ namespace GitUI
                                     }
 
                                     Color headColor = GetHeadColor(head);
-                                    Brush textBrush = new SolidBrush(headColor);
-
-                                    string headName;
-                                    PointF location;
-
-                                    if (IsCardLayout())
+                                    using (Brush textBrush = new SolidBrush(headColor))
                                     {
-                                        headName = head.Name;
-                                        offset += e.Graphics.MeasureString(headName, refsFont).Width + 6;
-                                        location = new PointF(e.CellBounds.Right - offset, e.CellBounds.Top + 4);
-                                        var size = new SizeF(e.Graphics.MeasureString(headName, refsFont).Width,
-                                                             e.Graphics.MeasureString(headName, RefsFont).Height);
-                                        e.Graphics.FillRectangle(SystemBrushes.Info, location.X - 1,
-                                                                 location.Y - 1, size.Width + 3, size.Height + 2);
-                                        e.Graphics.DrawRectangle(SystemPens.InfoText, location.X - 1,
-                                                                 location.Y - 1, size.Width + 3, size.Height + 2);
-                                        e.Graphics.DrawString(headName, refsFont, textBrush, location);
-                                    }
-                                    else
-                                    {
-                                        headName = IsFilledBranchesLayout()
-                                                       ? head.Name
-                                                       : string.Concat("[", head.Name, "] ");
+                                        string headName;
 
-                                        var headBounds = AdjustCellBounds(e.CellBounds, offset);
-                                        SizeF textSize = e.Graphics.MeasureString(headName, refsFont);
-
-                                        offset += textSize.Width;
-
-                                        if (IsFilledBranchesLayout())
+                                        if (IsCardLayout())
                                         {
-                                            offset += 9;
-
-                                            float extraOffset = DrawHeadBackground(isRowSelected, e.Graphics,
-                                                                                   headColor, headBounds.X,
-                                                                                   headBounds.Y,
-                                                                                   RoundToEven(textSize.Width + 3),
-                                                                                   RoundToEven(textSize.Height), 3,
-                                                                                   head.Selected,
-                                                                                   head.SelectedHeadMergeSource);
-
-                                            offset += extraOffset;
-                                            headBounds.Offset((int)(extraOffset + 1), 0);
+                                            headName = head.Name;
+                                            offset += e.Graphics.MeasureString(headName, refsFont).Width + 6;
+                                            PointF location = new PointF(e.CellBounds.Right - offset, e.CellBounds.Top + 4);
+                                            var size = new SizeF(e.Graphics.MeasureString(headName, refsFont).Width,
+                                                                 e.Graphics.MeasureString(headName, RefsFont).Height);
+                                            e.Graphics.FillRectangle(new SolidBrush(SystemColors.Info), location.X - 1,
+                                                                     location.Y - 1, size.Width + 3, size.Height + 2);
+                                            e.Graphics.DrawRectangle(new Pen(SystemColors.InfoText), location.X - 1,
+                                                                     location.Y - 1, size.Width + 3, size.Height + 2);
+                                            e.Graphics.DrawString(headName, refsFont, textBrush, location);
                                         }
+                                        else
+                                        {
+                                            headName = IsFilledBranchesLayout()
+                                                           ? head.Name
+                                                           : string.Concat("[", head.Name, "] ");
 
-                                        DrawColumnText(e.Graphics, headName, refsFont, headColor, headBounds);
+                                            var headBounds = AdjustCellBounds(e.CellBounds, offset);
+                                            SizeF textSize = e.Graphics.MeasureString(headName, refsFont);
+
+                                            offset += textSize.Width;
+
+                                            if (IsFilledBranchesLayout())
+                                            {
+                                                offset += 9;
+
+                                                float extraOffset = DrawHeadBackground(isRowSelected, e.Graphics,
+                                                                                       headColor, headBounds.X,
+                                                                                       headBounds.Y,
+                                                                                       RoundToEven(textSize.Width + 3),
+                                                                                       RoundToEven(textSize.Height), 3,
+                                                                                       head.Selected,
+                                                                                       head.SelectedHeadMergeSource);
+
+                                                offset += extraOffset;
+                                                headBounds.Offset((int) (extraOffset + 1), 0);
+                                            }
+
+                                            DrawColumnText(e.Graphics, headName, refsFont, headColor, headBounds);
+                                        }
                                     }
                                 }
                             }
@@ -1220,13 +1229,13 @@ namespace GitUI
                             if (IsCardLayout())
                                 offset = baseOffset;
 
-                            var text = (string)e.FormattedValue;
+                            var text = (string) e.FormattedValue;
                             var bounds = AdjustCellBounds(e.CellBounds, offset);
                             DrawColumnText(e.Graphics, text, rowFont, foreColor, bounds);
 
                             if (IsCardLayout())
                             {
-                                int textHeight = (int)e.Graphics.MeasureString(text, rowFont).Height;
+                                int textHeight = (int) e.Graphics.MeasureString(text, rowFont).Height;
                                 int gravatarSize = rowHeigth - textHeight - 12;
                                 int gravatarTop = e.CellBounds.Top + textHeight + 6;
                                 int gravatarLeft = e.CellBounds.Left + baseOffset + 2;
@@ -1270,7 +1279,7 @@ namespace GitUI
                         break;
                     case 2:
                         {
-                            var text = (string)e.FormattedValue;
+                            var text = (string) e.FormattedValue;
                             e.Graphics.DrawString(text, rowFont, foreBrush,
                                                   new PointF(e.CellBounds.Left, e.CellBounds.Top + 4));
                         }
@@ -1282,6 +1291,10 @@ namespace GitUI
                             e.Graphics.DrawString(text, rowFont, foreBrush,
                                                   new PointF(e.CellBounds.Left, e.CellBounds.Top + 4));
                         }
+                        break;
+                    case 4:
+                    case 5:
+                        BuildInfoDrawingLogic.RevisionsCellPainting(e, revision, foreBrush, rowFont);
                         break;
                 }
             }
@@ -1321,6 +1334,10 @@ namespace GitUI
                         else
                             e.Value = string.Format("{0} {1}", time.ToShortDateString(), time.ToLongTimeString());
                     }
+                    break;
+                case 4:
+                case 5:
+                    BuildInfoDrawingLogic.RevisionsCellFormatting(e, revision);
                     break;
                 default:
                     e.FormattingApplied = false;
