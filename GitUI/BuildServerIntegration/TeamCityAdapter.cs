@@ -41,7 +41,7 @@ namespace GitUI.BuildServerIntegration
                 httpClient = new HttpClient
                     {
                         Timeout = TimeSpan.FromMinutes(2),
-                        BaseAddress = Uri.IsWellFormedUriString(hostName, UriKind.Absolute)
+                        BaseAddress = hostName.StartsWith(Uri.UriSchemeHttp)
                                           ? new Uri(hostName, UriKind.Absolute)
                                           : new Uri(string.Format("{0}://{1}", Uri.UriSchemeHttp, hostName), UriKind.Absolute)
                     };
