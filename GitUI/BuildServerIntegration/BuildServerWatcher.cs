@@ -17,6 +17,8 @@ using Nini.Config;
 
 namespace GitUI.BuildServerIntegration
 {
+    using System.Threading.Tasks;
+
     public class BuildServerWatcher : IBuildServerWatcher, IDisposable
     {
         private readonly RevisionGrid revisionGrid;
@@ -218,19 +220,29 @@ namespace GitUI.BuildServerIntegration
             foreach (var commitHash in buildInfo.CommitHashList)
             {
                 string graphRevision;
-                int row = revisionGrid.SearchRevision(commitHash, out graphRevision);
-                if (row >= 0)
-                {
-                    var rowData = revisions.GetRowData(row);
-                    if (rowData.BuildStatus == null ||
-                        buildInfo.StartDate >= rowData.BuildStatus.StartDate)
-                    {
-                        rowData.BuildStatus = buildInfo;
+                
+                // quick fix for non-responsive UI :)
+                // int row = revisionGrid.SearchRevision(commitHash, out graphRevision);
+                var task = new TaskFactory();
+                task.StartNew(() => revisionGrid.SearchRevision(commitHash, out graphRevision))
+                    .ContinueWith(
+                        rowTask =>
+                            {
+                                var row = rowTask.Result;
+                                if (row >= 0)
+                                {
+                                    var rowData = revisions.GetRowData(row);
+                                    if (rowData.BuildStatus == null
+                                        || buildInfo.StartDate >= rowData.BuildStatus.StartDate)
+                                    {
+                                        rowData.BuildStatus = buildInfo;
 
-                        revisions.UpdateCellValue(4, row);
-                        revisions.UpdateCellValue(5, row);
-                    }
-                }
+                                        revisions.UpdateCellValue(4, row);
+                                        revisions.UpdateCellValue(5, row);
+                                    }
+                                }
+                            },
+                            TaskScheduler.FromCurrentSynchronizationContext());
             }
         }
 
